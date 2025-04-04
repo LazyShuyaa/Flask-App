@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify, render_template
 from motor.motor_asyncio import AsyncIOMotorClient
 import asyncio
 from datetime import datetime
-import requests
+import httpx
 import os
 
 app = Flask(__name__)
@@ -39,9 +39,7 @@ async def save_movie(data):
         "updated_at": datetime.utcnow()
     }
     
-    # Remove None values
     movie = {k: v for k, v in movie.items() if v is not None}
-    
     result = await movies_collection.insert_one(movie)
     return movie, str(result.inserted_id)
 
@@ -55,7 +53,6 @@ def format_direct_links(links_data):
     return formatted_links
 
 async def send_to_telegram(movie):
-    # Prepare caption with movie info
     caption = (
         f"🎬 <b>{movie.get('title', 'N/A')}</b>\n"
         f"📅 <b>Released:</b> {movie.get('released', 'N/A')}\n"
@@ -66,14 +63,12 @@ async def send_to_telegram(movie):
         "<b>Screenshots:</b>\n"
     )
     
-    # Add screenshots if available
     screenshots = movie.get('screenshots', [])
     if screenshots:
         caption += "\n".join([f"📸 {url}" for url in screenshots]) + "\n\n"
     else:
         caption += "No screenshots available\n\n"
 
-    # Add direct links
     caption += "<b>Direct Links:</b>\n"
     direct_links = movie.get('direct_links', {})
     for platform, qualities in direct_links.items():
@@ -82,32 +77,31 @@ async def send_to_telegram(movie):
             caption += f"  {quality}: <a href='{link}'>{link}</a>\n"
         caption += "\n"
 
-    # Send to Telegram using API
-    try:
-        poster_url = movie.get('poster')
-        if poster_url:
-            payload = {
-                "chat_id": CHANNEL_ID,
-                "photo": poster_url,
-                "caption": caption,
-                "parse_mode": "HTML"
-            }
-            response = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=payload)
-        else:
-            payload = {
-                "chat_id": CHANNEL_ID,
-                "text": caption,
-                "parse_mode": "HTML"
-            }
-            response = requests.post(f"{TELEGRAM_API_URL}/sendMessage", json=payload)
+    async with httpx.AsyncClient() as client:
+        try:
+            poster_url = movie.get('poster')
+            if poster_url:
+                payload = {
+                    "chat_id": CHANNEL_ID,
+                    "photo": poster_url,
+                    "caption": caption,
+                    "parse_mode": "HTML"
+                }
+                response = await client.post(f"{TELEGRAM_API_URL}/sendPhoto", json=payload)
+            else:
+                payload = {
+                    "chat_id": CHANNEL_ID,
+                    "text": caption,
+                    "parse_mode": "HTML"
+                }
+                response = await client.post(f"{TELEGRAM_API_URL}/sendMessage", json=payload)
 
-        if response.status_code != 200:
-            print(f"Failed to send to Telegram: {response.text}")
-        else:
-            print("Successfully sent to Telegram")
-
-    except Exception as e:
-        print(f"Error sending to Telegram: {str(e)}")
+            if response.status_code != 200:
+                print(f"Failed to send to Telegram: {response.text}")
+            else:
+                print("Successfully sent to Telegram")
+        except Exception as e:
+            print(f"Error sending to Telegram: {str(e)}")
 
 @app.route('/api/movies', methods=['POST'])
 async def create_movie():
@@ -128,8 +122,6 @@ async def create_movie():
         }
         
         movie, movie_id = await save_movie(movie_data)
-        
-        # Send to Telegram channel
         await send_to_telegram(movie)
         
         return jsonify({"status": "success", "movie_id": movie_id}), 201
@@ -149,5 +141,5 @@ async def get_movie(movie_id):
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 8000))  # Use Railway's PORT or default to 8000 locally
+    port = int(os.environ.get("PORT", 8000))
     app.run(host='0.0.0.0', port=port, debug=True)
