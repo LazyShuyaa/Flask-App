@@ -123,6 +123,26 @@ async def create_movie():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route('/api/movies', methods=['GET'])
+def get_all_movies():
+    try:
+        # Fetch all movies from the collection (synchronous with pymongo)
+        movies = list(movies_collection.find({}))
+        if not movies:
+            return jsonify({"status": "success", "movies": [], "message": "No movies found"}), 200
+        
+        # Convert ObjectId to string for JSON serialization
+        for movie in movies:
+            movie['_id'] = str(movie['_id'])
+            # Convert datetime objects to strings (optional, for readability)
+            movie['created_at'] = movie['created_at'].isoformat()
+            movie['updated_at'] = movie['updated_at'].isoformat()
+        
+        return jsonify({"status": "success", "movies": movies}), 200
+    
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 if __name__ == '__main__':
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
