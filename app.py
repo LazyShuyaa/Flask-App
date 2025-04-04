@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify, render_template
 from motor.motor_asyncio import AsyncIOMotorClient
 import asyncio
 from datetime import datetime
-import httpx
+import requests
 import os
 
 app = Flask(__name__)
@@ -77,31 +77,31 @@ async def send_to_telegram(movie):
             caption += f"  {quality}: <a href='{link}'>{link}</a>\n"
         caption += "\n"
 
-    async with httpx.AsyncClient() as client:
-        try:
-            poster_url = movie.get('poster')
-            if poster_url:
-                payload = {
-                    "chat_id": CHANNEL_ID,
-                    "photo": poster_url,
-                    "caption": caption,
-                    "parse_mode": "HTML"
-                }
-                response = await client.post(f"{TELEGRAM_API_URL}/sendPhoto", json=payload)
-            else:
-                payload = {
-                    "chat_id": CHANNEL_ID,
-                    "text": caption,
-                    "parse_mode": "HTML"
-                }
-                response = await client.post(f"{TELEGRAM_API_URL}/sendMessage", json=payload)
+    try:
+        poster_url = movie.get('poster')
+        if poster_url:
+            payload = {
+                "chat_id": CHANNEL_ID,
+                "photo": poster_url,
+                "caption": caption,
+                "parse_mode": "HTML"
+            }
+            # Run synchronous requests.post in a thread
+            response = await asyncio.to_thread(requests.post, f"{TELEGRAM_API_URL}/sendPhoto", json=payload)
+        else:
+            payload = {
+                "chat_id": CHANNEL_ID,
+                "text": caption,
+                "parse_mode": "HTML"
+            }
+            response = await asyncio.to_thread(requests.post, f"{TELEGRAM_API_URL}/sendMessage", json=payload)
 
-            if response.status_code != 200:
-                print(f"Failed to send to Telegram: {response.text}")
-            else:
-                print("Successfully sent to Telegram")
-        except Exception as e:
-            print(f"Error sending to Telegram: {str(e)}")
+        if response.status_code != 200:
+            print(f"Failed to send to Telegram: {response.text}")
+        else:
+            print("Successfully sent to Telegram")
+    except Exception as e:
+        print(f"Error sending to Telegram: {str(e)}")
 
 @app.route('/api/movies', methods=['POST'])
 async def create_movie():
