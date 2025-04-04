@@ -1,14 +1,13 @@
 from flask import Flask, request, jsonify, render_template
-from motor.motor_asyncio import AsyncIOMotorClient
-import asyncio
+from pymongo import MongoClient
 from datetime import datetime
 import requests
 import os
 
 app = Flask(__name__)
 
-# MongoDB connection
-client = AsyncIOMotorClient('mongodb+srv://shekharhatture107:593l9WPPjJ9y5HXm@cluster0.frrrs.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
+# MongoDB connection using pymongo
+client = MongoClient('mongodb+srv://shekharhatture107:593l9WPPjJ9y5HXm@cluster0.frrrs.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
 db = client['movies_db']
 movies_collection = db['movies']
 
@@ -23,7 +22,7 @@ def index():
     return render_template('index.html')
 
 # Movie data model
-async def save_movie(data):
+def save_movie(data):
     movie = {
         "title": data.get("title"),
         "type": data.get("type", "movie"),
@@ -40,7 +39,7 @@ async def save_movie(data):
     }
     
     movie = {k: v for k, v in movie.items() if v is not None}
-    result = await movies_collection.insert_one(movie)
+    result = movies_collection.insert_one(movie)
     return movie, str(result.inserted_id)
 
 def format_direct_links(links_data):
@@ -52,7 +51,7 @@ def format_direct_links(links_data):
                 formatted_links[platform][quality] = link
     return formatted_links
 
-async def send_to_telegram(movie):
+def send_to_telegram(movie):
     caption = (
         f"🎬 <b>{movie.get('title', 'N/A')}</b>\n"
         f"📅 <b>Released:</b> {movie.get('released', 'N/A')}\n"
@@ -86,15 +85,14 @@ async def send_to_telegram(movie):
                 "caption": caption,
                 "parse_mode": "HTML"
             }
-            # Run synchronous requests.post in a thread
-            response = await asyncio.to_thread(requests.post, f"{TELEGRAM_API_URL}/sendPhoto", json=payload)
+            response = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=payload)
         else:
             payload = {
                 "chat_id": CHANNEL_ID,
                 "text": caption,
                 "parse_mode": "HTML"
             }
-            response = await asyncio.to_thread(requests.post, f"{TELEGRAM_API_URL}/sendMessage", json=payload)
+            response = requests.post(f"{TELEGRAM_API_URL}/sendMessage", json=payload)
 
         if response.status_code != 200:
             print(f"Failed to send to Telegram: {response.text}")
@@ -104,7 +102,7 @@ async def send_to_telegram(movie):
         print(f"Error sending to Telegram: {str(e)}")
 
 @app.route('/api/movies', methods=['POST'])
-async def create_movie():
+def create_movie():
     try:
         data = request.get_json()
         
@@ -121,8 +119,8 @@ async def create_movie():
             "direct_links": data.get("Direct Links", {})
         }
         
-        movie, movie_id = await save_movie(movie_data)
-        await send_to_telegram(movie)
+        movie, movie_id = save_movie(movie_data)
+        send_to_telegram(movie)
         
         return jsonify({"status": "success", "movie_id": movie_id}), 201
     
@@ -130,9 +128,9 @@ async def create_movie():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/api/movies/<movie_id>', methods=['GET'])
-async def get_movie(movie_id):
+def get_movie(movie_id):
     try:
-        movie = await movies_collection.find_one({"_id": movie_id})
+        movie = movies_collection.find_one({"_id": movie_id})
         if movie:
             movie['_id'] = str(movie['_id'])
             return jsonify(movie), 200
