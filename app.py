@@ -9,12 +9,12 @@ app = Flask(__name__)
 
 # MongoDB connection with pymongo (synchronous)
 client = MongoClient('mongodb+srv://shekharhatture107:593l9WPPjJ9y5HXm@cluster0.frrrs.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
-db = client['filmdb']
+db = client['movies_db']
 movies_collection = db['movies']
 
 # Telegram API setup
 BOT_TOKEN = "8181263340:AAFoljjOFqe7b24u708_mXt3zkq2El1n70Y"
-CHANNEL_ID = "6857856691"
+CHANNEL_ID = "-1002605592823"
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 # Movie data model (synchronous with pymongo)
@@ -35,16 +35,18 @@ def save_movie(data):
     }
     
     movie = {k: v for k, v in movie.items() if v is not None}
-    result = movies_collection.insert_one(movie)  # Synchronous call
+    result = movies_collection.insert_one(movie)
     return movie, str(result.inserted_id)
 
 def format_direct_links(links_data):
     formatted_links = {}
     for platform, qualities in links_data.items():
-        formatted_links[platform] = {}
-        if isinstance(qualities, dict):
-            for quality, link in qualities.items():
-                formatted_links[platform][quality] = link
+        # Skip platforms with "note" (case-insensitive)
+        if "note" not in platform.lower():
+            formatted_links[platform] = {}
+            if isinstance(qualities, dict):
+                for quality, link in qualities.items():
+                    formatted_links[platform][quality] = link
     return formatted_links
 
 async def send_to_telegram(movie):
@@ -115,8 +117,8 @@ async def create_movie():
             "direct_links": data.get("Direct Links", {})
         }
         
-        movie, movie_id = save_movie(movie_data)  # Synchronous call
-        await send_to_telegram(movie)  # Async call for Telegram
+        movie, movie_id = save_movie(movie_data)
+        await send_to_telegram(movie)
         
         return jsonify({"status": "success", "movie_id": movie_id}), 201
     
@@ -126,15 +128,12 @@ async def create_movie():
 @app.route('/api/movies', methods=['GET'])
 def get_all_movies():
     try:
-        # Fetch all movies from the collection (synchronous with pymongo)
         movies = list(movies_collection.find({}))
         if not movies:
             return jsonify({"status": "success", "movies": [], "message": "No movies found"}), 200
         
-        # Convert ObjectId to string for JSON serialization
         for movie in movies:
             movie['_id'] = str(movie['_id'])
-            # Convert datetime objects to strings (optional, for readability)
             movie['created_at'] = movie['created_at'].isoformat()
             movie['updated_at'] = movie['updated_at'].isoformat()
         
