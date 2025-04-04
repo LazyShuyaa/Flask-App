@@ -9,7 +9,7 @@ app = Flask(__name__)
 
 # MongoDB connection with pymongo (synchronous)
 client = MongoClient('mongodb+srv://shekharhatture107:593l9WPPjJ9y5HXm@cluster0.frrrs.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
-db = client['movies_db']
+db = client['filmdb']
 movies_collection = db['movies']
 
 # Telegram API setup
