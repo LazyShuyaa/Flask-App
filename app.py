@@ -30,6 +30,11 @@ def save_or_update_movie(data):
     # Remove None values
     movie = {k: v for k, v in movie.items() if v is not None}
     
+    # Skip if direct_links is empty or None
+    if not movie.get("direct_links") or movie["direct_links"] == {}:
+        print(f"Skipping '{movie['title']}' due to empty or None direct_links")
+        return None, None
+    
     # Check if a movie/series with the same title already exists
     existing_movie = movies_collection.find_one({"title": movie["title"]})
     
@@ -63,19 +68,17 @@ def format_direct_links(links_data):
             # Handle episodic or batch data
             if isinstance(value, dict):
                 if key.lower() == "zip batch":
-                    # Zip Batch: flatten into provider-quality structure
                     formatted_links[key] = {}
                     for quality, providers in value.items():
                         if isinstance(providers, dict):
                             formatted_links[key][quality] = providers
                 elif key.lower() == "single episodes" or "epi" in key.lower():
-                    # Single Episodes: preserve episode structure
                     formatted_links[key] = {}
                     for sub_key, sub_value in value.items():
                         if isinstance(sub_value, dict):
                             formatted_links[key][sub_key] = sub_value
         else:
-            # Handle non-episodic data (original format)
+            # Handle non-episodic data
             formatted_links[key] = {}
             if isinstance(value, dict):
                 for quality, link in value.items():
@@ -102,6 +105,8 @@ def create_movie():
         }
         
         movie, movie_id = save_or_update_movie(movie_data)
+        if movie is None and movie_id is None:
+            return jsonify({"status": "skipped", "message": "Movie skipped due to empty direct_links"}), 200
         
         return jsonify({"status": "success", "movie_id": movie_id}), 201
     
@@ -111,9 +116,10 @@ def create_movie():
 @app.route('/api/movies', methods=['GET'])
 def get_all_movies():
     try:
-        movies = list(movies_collection.find({}))
+        # Fetch all movies and filter out those with empty or None direct_links
+        movies = [movie for movie in movies_collection.find({}) if movie.get("direct_links") and movie["direct_links"] != {}]
         if not movies:
-            return jsonify({"status": "success", "movies": [], "message": "No movies found"}), 200
+            return jsonify({"status": "success", "movies": [], "message": "No movies found with valid direct_links"}), 200
         
         for movie in movies:
             movie['_id'] = str(movie['_id'])
@@ -121,6 +127,37 @@ def get_all_movies():
             movie['updated_at'] = movie['updated_at'].isoformat()
         
         return jsonify({"status": "success", "movies": movies}), 200
+    
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/movies/remove-duplicates', methods=['POST'])
+def remove_duplicates():
+    try:
+        # Get all movies sorted by updated_at (newest first)
+        all_movies = list(movies_collection.find({}).sort("updated_at", -1))
+        if not all_movies:
+            return jsonify({"status": "success", "message": "No movies to process"}), 200
+        
+        # Track seen titles and duplicates to remove
+        seen_titles = set()
+        duplicates_removed = 0
+        
+        for movie in all_movies:
+            title = movie["title"]
+            if title in seen_titles:
+                # Remove duplicate (keep the most recent one due to sort order)
+                movies_collection.delete_one({"_id": movie["_id"]})
+                duplicates_removed += 1
+                print(f"Removed duplicate movie: {title}")
+            else:
+                seen_titles.add(title)
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Removed {duplicates_removed} duplicate movies",
+            "remaining_movies": len(all_movies) - duplicates_removed
+        }), 200
     
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
