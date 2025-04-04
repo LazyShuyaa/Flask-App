@@ -30,7 +30,7 @@ def save_or_update_movie(data):
     # Remove None values
     movie = {k: v for k, v in movie.items() if v is not None}
     
-    # Check if a movie with the same title already exists
+    # Check if a movie/series with the same title already exists
     existing_movie = movies_collection.find_one({"title": movie["title"]})
     
     if existing_movie:
@@ -42,26 +42,45 @@ def save_or_update_movie(data):
             # Update the existing movie if data has changed
             movie["created_at"] = existing_movie["created_at"]  # Preserve original creation time
             movies_collection.update_one({"title": movie["title"]}, {"$set": movie})
-            print(f"Updated movie: {movie['title']}")
+            print(f"Updated movie/series: {movie['title']}")
             return movie, str(existing_movie["_id"])
         else:
-            print(f"Movie already exists with identical data: {movie['title']}")
+            print(f"Movie/series already exists with identical data: {movie['title']}")
             return existing_movie, str(existing_movie["_id"])
     else:
-        # Insert new movie if it doesn’t exist
+        # Insert new movie/series if it doesn’t exist
         result = movies_collection.insert_one(movie)
-        print(f"Inserted new movie: {movie['title']}")
+        print(f"Inserted new movie/series: {movie['title']}")
         return movie, str(result.inserted_id)
 
 def format_direct_links(links_data):
     formatted_links = {}
-    for platform, qualities in links_data.items():
-        # Skip platforms with "note" (case-insensitive)
-        if "note" not in platform.lower():
-            formatted_links[platform] = {}
-            if isinstance(qualities, dict):
-                for quality, link in qualities.items():
-                    formatted_links[platform][quality] = link
+    for key, value in links_data.items():
+        if "note" in key.lower():
+            continue  # Skip platforms with "note" in the name
+        
+        if key.lower() in ["zip batch", "single episodes"] or "epi" in key.lower():
+            # Handle episodic or batch data
+            if isinstance(value, dict):
+                if key.lower() == "zip batch":
+                    # Zip Batch: flatten into provider-quality structure
+                    formatted_links[key] = {}
+                    for quality, providers in value.items():
+                        if isinstance(providers, dict):
+                            formatted_links[key][quality] = providers
+                elif key.lower() == "single episodes" or "epi" in key.lower():
+                    # Single Episodes: preserve episode structure
+                    formatted_links[key] = {}
+                    for sub_key, sub_value in value.items():
+                        if isinstance(sub_value, dict):
+                            formatted_links[key][sub_key] = sub_value
+        else:
+            # Handle non-episodic data (original format)
+            formatted_links[key] = {}
+            if isinstance(value, dict):
+                for quality, link in value.items():
+                    formatted_links[key][quality] = link
+    
     return formatted_links
 
 @app.route('/api/movies', methods=['POST'])
