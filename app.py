@@ -14,7 +14,7 @@ movies_collection = db['movies']
 
 # Telegram API setup
 BOT_TOKEN = "8181263340:AAFoljjOFqe7b24u708_mXt3zkq2El1n70Y"
-CHANNEL_ID = "-1002605592823"
+CHANNEL_ID = "6857856691"
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 # Movie data model (synchronous with pymongo)
