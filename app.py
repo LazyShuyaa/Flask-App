@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify
 from pymongo import MongoClient
 from datetime import datetime
-import requests
 import os
 
 app = Flask(__name__)
@@ -11,13 +10,8 @@ client = MongoClient('mongodb+srv://shekharhatture107:593l9WPPjJ9y5HXm@cluster0.
 db = client['filmdb']
 movies_collection = db['movies']
 
-# Telegram API setup
-BOT_TOKEN = "8181263340:AAFoljjOFqe7b24u708_mXt3zkq2El1n70Y"
-CHANNEL_ID = "-1002605592823"
-TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
-
 # Movie data model (synchronous with pymongo)
-def save_movie(data):
+def save_or_update_movie(data):
     movie = {
         "title": data.get("title"),
         "type": data.get("type", "movie"),
@@ -33,9 +27,31 @@ def save_movie(data):
         "updated_at": datetime.utcnow()
     }
     
+    # Remove None values
     movie = {k: v for k, v in movie.items() if v is not None}
-    result = movies_collection.insert_one(movie)
-    return movie, str(result.inserted_id)
+    
+    # Check if a movie with the same title already exists
+    existing_movie = movies_collection.find_one({"title": movie["title"]})
+    
+    if existing_movie:
+        # Compare existing movie with new data (excluding timestamps and _id)
+        existing_data = {k: v for k, v in existing_movie.items() if k not in ['_id', 'created_at', 'updated_at']}
+        new_data = {k: v for k, v in movie.items() if k not in ['created_at', 'updated_at']}
+        
+        if existing_data != new_data:
+            # Update the existing movie if data has changed
+            movie["created_at"] = existing_movie["created_at"]  # Preserve original creation time
+            movies_collection.update_one({"title": movie["title"]}, {"$set": movie})
+            print(f"Updated movie: {movie['title']}")
+            return movie, str(existing_movie["_id"])
+        else:
+            print(f"Movie already exists with identical data: {movie['title']}")
+            return existing_movie, str(existing_movie["_id"])
+    else:
+        # Insert new movie if it doesn’t exist
+        result = movies_collection.insert_one(movie)
+        print(f"Inserted new movie: {movie['title']}")
+        return movie, str(result.inserted_id)
 
 def format_direct_links(links_data):
     formatted_links = {}
@@ -47,56 +63,6 @@ def format_direct_links(links_data):
                 for quality, link in qualities.items():
                     formatted_links[platform][quality] = link
     return formatted_links
-
-def send_to_telegram(movie):
-    caption = (
-        f"🎬 <b>{movie.get('title', 'N/A')}</b>\n"
-        f"📅 <b>Released:</b> {movie.get('released', 'N/A')}\n"
-        f"🎭 <b>Genre:</b> {movie.get('genre', 'N/A')}\n"
-        f"📝 <b>Plot:</b> {movie.get('plot', 'N/A')}\n"
-        f"⏱️ <b>Runtime:</b> {movie.get('runtime', 'N/A')}\n"
-        f"⭐ <b>IMDb:</b> {movie.get('imdb', 'N/A')}\n\n"
-        "<b>Screenshots:</b>\n"
-    )
-    
-    screenshots = movie.get('screenshots', [])
-    if screenshots:
-        caption += "\n".join([f"📸 {url}" for url in screenshots]) + "\n\n"
-    else:
-        caption += "No screenshots available\n\n"
-
-    caption += "<b>Direct Links:</b>\n"
-    direct_links = movie.get('direct_links', {})
-    for platform, qualities in direct_links.items():
-        caption += f"📦 <b>{platform}:</b>\n"
-        for quality, link in qualities.items():
-            caption += f"  {quality}: <a href='{link}'>{link}</a>\n"
-        caption += "\n"
-
-    try:
-        poster_url = movie.get('poster')
-        if poster_url:
-            payload = {
-                "chat_id": CHANNEL_ID,
-                "photo": poster_url,
-                "caption": caption,
-                "parse_mode": "HTML"
-            }
-            response = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=payload)
-        else:
-            payload = {
-                "chat_id": CHANNEL_ID,
-                "text": caption,
-                "parse_mode": "HTML"
-            }
-            response = requests.post(f"{TELEGRAM_API_URL}/sendMessage", json=payload)
-
-        if response.status_code != 200:
-            print(f"Failed to send to Telegram: {response.text}")
-        else:
-            print("Successfully sent to Telegram")
-    except Exception as e:
-        print(f"Error sending to Telegram: {str(e)}")
 
 @app.route('/api/movies', methods=['POST'])
 def create_movie():
@@ -116,8 +82,7 @@ def create_movie():
             "direct_links": data.get("Direct Links", {})
         }
         
-        movie, movie_id = save_movie(movie_data)
-        send_to_telegram(movie)
+        movie, movie_id = save_or_update_movie(movie_data)
         
         return jsonify({"status": "success", "movie_id": movie_id}), 201
     
