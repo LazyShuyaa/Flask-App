@@ -162,6 +162,31 @@ def remove_duplicates():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route('/api/movies/remove-empty-links', methods=['POST'])
+def remove_empty_links():
+    try:
+        # Get all movies
+        all_movies = list(movies_collection.find({}))
+        if not all_movies:
+            return jsonify({"status": "success", "message": "No movies to process"}), 200
+        
+        # Count and remove movies with empty or None direct_links
+        empty_removed = 0
+        for movie in all_movies:
+            if not movie.get("direct_links") or movie["direct_links"] == {}:
+                movies_collection.delete_one({"_id": movie["_id"]})
+                empty_removed += 1
+                print(f"Removed movie with empty direct_links: {movie['title']}")
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Removed {empty_removed} movies with empty or None direct_links",
+            "remaining_movies": len(all_movies) - empty_removed
+        }), 200
+    
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port, debug=True)
