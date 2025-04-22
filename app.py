@@ -58,7 +58,7 @@ def convert_mongo_to_sqlite():
 
     return sqlite_db
 
-@app.route('/download_sqlite', methods=['GET'])
+@app.route('/api/download_sqlite', methods=['GET'])
 def download_sqlite():
     try:
         # Convert MongoDB data to SQLite
