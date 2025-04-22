@@ -1,4 +1,4 @@
-from flask import Flask, send_file, jsonify
+from flask import Flask, send_file, jsonify 
 from pymongo import MongoClient
 import sqlite3
 import os
@@ -36,8 +36,11 @@ def convert_mongo_to_sqlite():
 
     # Fetch MongoDB data
     characters = collection.find()
+    total_characters = collection.count_documents({})  # Count the total characters for progress tracking
+    print(f"Total characters to scrape: {total_characters}")
 
     # Insert data into SQLite
+    scraped_count = 0  # Initialize counter for scraped characters
     for character in characters:
         cursor.execute('''
             INSERT OR REPLACE INTO characters (character_id, image, name, anime, rarity, uploader_id, uploader_name, event)
@@ -52,6 +55,10 @@ def convert_mongo_to_sqlite():
             character.get("uploader_name"),
             character.get("event", "")
         ))
+
+        # Update scraped count and print progress
+        scraped_count += 1
+        print(f"Scraped {scraped_count}/{total_characters} characters...")
 
     # Commit changes and return the SQLite database in memory
     sqlite_db.commit()
@@ -72,10 +79,9 @@ def download_sqlite():
 
             # Send SQLite file as a response
             return send_file(db_file, as_attachment=True, download_name="characters.db", mimetype="application/x-sqlite3")
-        
+
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
 
 if __name__ == '__main__':
     app.run(debug=True)
